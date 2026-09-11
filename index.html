@@ -342,6 +342,7 @@
       </div>
       <button class="settings-save-btn" id="sheets-url-save">保存して同期</button>
       <button class="settings-secondary-btn" id="sheets-resync-all">このスマホの全データを再送信</button>
+      <button class="settings-secondary-btn" id="cleanup-data">このスマホ内の壊れたデータを掃除</button>
       <p class="sync-status" id="sync-status">未設定(このスマホ内にのみ保存されています)</p>
     </div>
   </section>
@@ -828,6 +829,7 @@
       .then(function(remote){
         var pending = getPending();
         Object.keys(remote).forEach(function(key){
+          if(!VALID_DATE_KEY.test(key)) return; // ignore malformed keys from a misbehaving server response
           if(pending.indexOf(key) !== -1) return; // don't clobber an unsynced local edit
           data[key] = remote[key];
         });
@@ -886,6 +888,29 @@
       return;
     }
     bulkPushAllLocalData();
+  });
+
+  // "2026-09-07" のような正しい形式以外のキーで保存されてしまったデータ
+  // (スプレッドシート側の不具合が直る前に同期して紛れ込んでしまったもの等)を取り除く
+  var VALID_DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+  document.getElementById("cleanup-data").addEventListener("click", function(){
+    var badKeys = Object.keys(data).filter(function(k){ return !VALID_DATE_KEY.test(k); });
+    if(badKeys.length === 0){
+      alert("壊れたデータは見つかりませんでした。");
+      return;
+    }
+    if(!confirm(badKeys.length + "件の、日付の形式がおかしいデータが見つかりました。削除してよろしいですか?(同じ日の正しいデータは残ります)")){
+      return;
+    }
+    badKeys.forEach(function(k){
+      delete data[k];
+      removePending(k);
+    });
+    saveData(data);
+    renderCalendar();
+    renderChart();
+    refreshEditCounters();
+    alert(badKeys.length + "件削除しました。");
   });
 
   // ---- init ----
