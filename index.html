@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>健康トラッカー</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1F6F6F">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg: #F4F7F6;
+    --card: #FFFFFF;
+    --ink: #1E2A2A;
+    --sub: #6B7A7A;
+    --line: #E3EAE9;
+    --accent: #1F6F6F;
+    --accent-soft: #E4F0EF;
+    --carbs: #4C9F70;
+    --alcohol: #D98E4A;
+    --exercise: #3B6FE0;
+    --steps: #8B5CF6;
+    --weight: #E0555C;
+    --radius: 18px;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+    padding-bottom: 48px;
+  }
+  header{
+    position: sticky; top:0; z-index: 10;
+    background: var(--accent);
+    color: #fff;
+    padding: 18px 20px 16px;
+  }
+  header h1{
+    margin:0; font-size: 19px; font-weight: 700; letter-spacing: .01em;
+  }
+  header p{
+    margin: 4px 0 0; font-size: 12.5px; color: #DCEFEC; font-weight: 400;
+  }
+  main{ padding: 16px; max-width: 520px; margin: 0 auto; }
+  section{ margin-bottom: 28px; }
+  section > h2{
+    font-size: 14px; font-weight: 700; color: var(--sub);
+    margin: 0 0 10px 2px;
+  }
+  .card{
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--line);
+  }
+  .counter-grid{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .counter-btn{
+    appearance: none; border: none; cursor: pointer;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 6px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    min-height: 96px;
+    transition: transform .08s ease, background .15s ease;
+  }
+  .counter-btn:active{ transform: scale(.95); background: var(--accent-soft); }
+  .counter-btn .icon{ font-size: 26px; line-height: 1; }
+  .counter-btn .label{ font-size: 12.5px; color: var(--ink); font-weight: 600; }
+  .counter-btn .count{ font-size: 20px; font-weight: 800; color: var(--accent); }
+  .counter-btn .count::after{ content: " 回"; font-size: 11px; font-weight: 600; color: var(--sub); }
+
+  .numeric-card{
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .numeric-card .icon{ font-size: 22px; width: 30px; text-align:center; }
+  .numeric-card .field{ flex: 1; display:flex; flex-direction:column; }
+  .numeric-card label{ font-size: 12px; color: var(--sub); font-weight: 600; margin-bottom: 2px; }
+  .numeric-card input{
+    font-size: 20px; font-weight: 700; color: var(--ink);
+    border: none; outline: none; width: 100%; background: transparent;
+    -moz-appearance: textfield;
+  }
+  .numeric-card input::-webkit-outer-spin-button,
+  .numeric-card input::-webkit-inner-spin-button{ -webkit-appearance: none; margin:0; }
+  .numeric-card button{
+    appearance: none; border: none; cursor: pointer;
+    background: var(--accent); color: #fff;
+    font-size: 13px; font-weight: 700;
+    padding: 10px 16px; border-radius: 12px;
+    white-space: nowrap;
+  }
+  .numeric-card button:active{ opacity: .85; }
+
+  .chart-card{ margin-bottom: 12px; padding: 14px 16px 10px; }
+  .chart-card .chart-head{
+    display:flex; align-items:baseline; justify-content: space-between; margin-bottom: 6px;
+  }
+  .chart-card .chart-title{ font-size: 13.5px; font-weight: 700; }
+  .chart-card .chart-latest{ font-size: 12px; color: var(--sub); }
+  .chart-card svg{ display:block; width: 100%; height: 92px; }
+  .chart-card .axis-label{ font-size: 9px; fill: var(--sub); }
+
+  .export-row{ margin-top: 4px; }
+  .export-btn{
+    appearance:none; width: 100%; border: 1px dashed var(--sub);
+    background: transparent; color: var(--sub); font-weight: 700; font-size: 13px;
+    padding: 12px; border-radius: var(--radius); cursor:pointer;
+  }
+  .export-btn:active{ background: var(--accent-soft); }
+
+  .range-tabs{ display:flex; gap:6px; margin-bottom: 12px; }
+  .range-tabs button{
+    flex:1; appearance:none; cursor:pointer; border: 1px solid var(--line);
+    background: var(--card); color: var(--sub); font-weight:700; font-size: 12.5px;
+    padding: 8px; border-radius: 12px;
+  }
+  .range-tabs button.active{ background: var(--accent); color:#fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>健康トラッカー</h1>
+  <p id="today-label">今日の記録</p>
+</header>
+
+<main>
+
+  <section id="input-section">
+    <h2>記録する</h2>
+    <div class="counter-grid">
+      <button class="counter-btn" data-key="carbs">
+        <span class="icon">🍚</span>
+        <span class="label">炭水化物</span>
+        <span class="count" id="count-carbs">0</span>
+      </button>
+      <button class="counter-btn" data-key="alcohol">
+        <span class="icon">🍺</span>
+        <span class="label">お酒</span>
+        <span class="count" id="count-alcohol">0</span>
+      </button>
+      <button class="counter-btn" data-key="exercise">
+        <span class="icon">🏋️</span>
+        <span class="label">運動</span>
+        <span class="count" id="count-exercise">0</span>
+      </button>
+    </div>
+
+    <div class="card numeric-card">
+      <span class="icon">👣</span>
+      <div class="field">
+        <label for="input-steps">歩数</label>
+        <input id="input-steps" type="number" inputmode="numeric" placeholder="例: 8000">
+      </div>
+      <button id="save-steps">保存</button>
+    </div>
+
+    <div class="card numeric-card">
+      <span class="icon">⚖️</span>
+      <div class="field">
+        <label for="input-weight">体重 (kg)</label>
+        <input id="input-weight" type="number" inputmode="decimal" step="0.1" placeholder="例: 65.5">
+      </div>
+      <button id="save-weight">保存</button>
+    </div>
+  </section>
+
+  <section id="report-section">
+    <h2>推移レポート</h2>
+
+    <div class="range-tabs">
+      <button data-range="14" class="active">直近14日</button>
+      <button data-range="30">直近30日</button>
+      <button data-range="90">直近90日</button>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <span class="chart-title">🍚 炭水化物</span>
+        <span class="chart-latest" id="latest-carbs">-</span>
+      </div>
+      <svg id="chart-carbs" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <span class="chart-title">🍺 お酒</span>
+        <span class="chart-latest" id="latest-alcohol">-</span>
+      </div>
+      <svg id="chart-alcohol" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <span class="chart-title">🏋️ 運動</span>
+        <span class="chart-latest" id="latest-exercise">-</span>
+      </div>
+      <svg id="chart-exercise" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <span class="chart-title">👣 歩数</span>
+        <span class="chart-latest" id="latest-steps">-</span>
+      </div>
+      <svg id="chart-steps" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <span class="chart-title">⚖️ 体重</span>
+        <span class="chart-latest" id="latest-weight">-</span>
+      </div>
+      <svg id="chart-weight" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="export-row">
+      <button class="export-btn" id="export-csv">CSVでバックアップを保存</button>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "healthTrackerData_v1";
+  var currentRange = 14;
+
+  var COLORS = {
+    carbs: getComputedStyle(document.documentElement).getPropertyValue('--carbs').trim(),
+    alcohol: getComputedStyle(document.documentElement).getPropertyValue('--alcohol').trim(),
+    exercise: getComputedStyle(document.documentElement).getPropertyValue('--exercise').trim(),
+    steps: getComputedStyle(document.documentElement).getPropertyValue('--steps').trim(),
+    weight: getComputedStyle(document.documentElement).getPropertyValue('--weight').trim()
+  };
+
+  function todayKey(){
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
+  }
+  function pad(n){ return n < 10 ? "0"+n : ""+n; }
+
+  function loadData(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){
+      console.error("読み込みエラー", e);
+      return {};
+    }
+  }
+  function saveData(data){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  var data = loadData();
+
+  function getToday(){
+    var key = todayKey();
+    if(!data[key]){
+      data[key] = { carbs:0, alcohol:0, exercise:0, steps:null, weight:null };
+    }
+    return data[key];
+  }
+
+  function formatDateLabel(){
+    var d = new Date();
+    var w = ["日","月","火","水","木","金","土"][d.getDay()];
+    return (d.getMonth()+1) + "月" + d.getDate() + "日(" + w + ")の記録";
+  }
+  document.getElementById("today-label").textContent = formatDateLabel();
+
+  // ---- counters ----
+  function refreshCounters(){
+    var t = getToday();
+    document.getElementById("count-carbs").textContent = t.carbs;
+    document.getElementById("count-alcohol").textContent = t.alcohol;
+    document.getElementById("count-exercise").textContent = t.exercise;
+  }
+
+  document.querySelectorAll(".counter-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var key = btn.getAttribute("data-key");
+      var t = getToday();
+      t[key] = (t[key] || 0) + 1;
+      saveData(data);
+      refreshCounters();
+      renderAllCharts();
+      if(navigator.vibrate){ navigator.vibrate(15); }
+    });
+  });
+
+  // ---- numeric inputs ----
+  document.getElementById("save-steps").addEventListener("click", function(){
+    var v = parseFloat(document.getElementById("input-steps").value);
+    if(isNaN(v) || v < 0){ alert("歩数を正しく入力してください"); return; }
+    var t = getToday();
+    t.steps = Math.round(v);
+    saveData(data);
+    document.getElementById("input-steps").value = "";
+    renderAllCharts();
+  });
+
+  document.getElementById("save-weight").addEventListener("click", function(){
+    var v = parseFloat(document.getElementById("input-weight").value);
+    if(isNaN(v) || v <= 0){ alert("体重を正しく入力してください"); return; }
+    var t = getToday();
+    t.weight = v;
+    saveData(data);
+    document.getElementById("input-weight").value = "";
+    renderAllCharts();
+  });
+
+  // ---- range tabs ----
+  document.querySelectorAll(".range-tabs button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      document.querySelectorAll(".range-tabs button").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      currentRange = parseInt(btn.getAttribute("data-range"), 10);
+      renderAllCharts();
+    });
+  });
+
+  // ---- charts ----
+  function lastNDates(n){
+    var arr = [];
+    var d = new Date();
+    for(var i = n-1; i >= 0; i--){
+      var dd = new Date(d);
+      dd.setDate(d.getDate() - i);
+      var key = dd.getFullYear() + "-" + pad(dd.getMonth()+1) + "-" + pad(dd.getDate());
+      arr.push(key);
+    }
+    return arr;
+  }
+
+  function renderBarChart(svgId, metric, color, unit){
+    var svg = document.getElementById(svgId);
+    var dates = lastNDates(currentRange);
+    var values = dates.map(function(k){
+      var rec = data[k];
+      var v = rec ? rec[metric] : null;
+      return (v === null || v === undefined) ? 0 : v;
+    });
+    var max = Math.max.apply(null, values.concat([1]));
+
+    var W = 300, H = 100, padBottom = 14, padTop = 6;
+    var barGap = 2;
+    var barW = (W / values.length) - barGap;
+
+    var svgParts = [];
+    values.forEach(function(v, i){
+      var h = ((H - padBottom - padTop) * (v / max));
+      var x = i * (W / values.length) + barGap/2;
+      var y = H - padBottom - h;
+      svgParts.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(h,1).toFixed(1)+'" rx="1.5" fill="'+color+'" opacity="'+(v>0?1:0.18)+'"></rect>');
+    });
+    // baseline
+    svgParts.push('<line x1="0" y1="'+(H-padBottom)+'" x2="'+W+'" y2="'+(H-padBottom)+'" stroke="#E3EAE9" stroke-width="1"></line>');
+
+    svg.innerHTML = svgParts.join("");
+
+    var latest = latestNonNull(values, metric);
+    document.getElementById("latest-" + metric).textContent = latest === null ? "記録なし" : "最新: " + latest + (unit||"");
+  }
+
+  function renderLineChart(svgId, metric, color, unit){
+    var svg = document.getElementById(svgId);
+    var dates = lastNDates(currentRange);
+    var values = dates.map(function(k){
+      var rec = data[k];
+      var v = rec ? rec[metric] : null;
+      return (v === null || v === undefined) ? null : v;
+    });
+    var present = values.filter(function(v){ return v !== null; });
+    if(present.length === 0){
+      svg.innerHTML = '<line x1="0" y1="50" x2="300" y2="50" stroke="#E3EAE9" stroke-width="1"></line>';
+      document.getElementById("latest-" + metric).textContent = "記録なし";
+      return;
+    }
+    var min = Math.min.apply(null, present);
+    var max = Math.max.apply(null, present);
+    if(min === max){ min = min - 1; max = max + 1; }
+
+    var W = 300, H = 100, padTop = 8, padBottom = 14;
+    var stepX = W / (values.length - 1 || 1);
+
+    var pts = [];
+    values.forEach(function(v, i){
+      if(v === null) return;
+      var x = i * stepX;
+      var y = padTop + (H - padTop - padBottom) * (1 - (v - min) / (max - min));
+      pts.push([x, y]);
+    });
+
+    var path = pts.map(function(p, i){
+      return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1);
+    }).join(" ");
+
+    var dots = pts.map(function(p){
+      return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.4" fill="'+color+'"></circle>';
+    }).join("");
+
+    svg.innerHTML =
+      '<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>' +
+      dots +
+      '<line x1="0" y1="'+(H-padBottom)+'" x2="'+W+'" y2="'+(H-padBottom)+'" stroke="#E3EAE9" stroke-width="1"></line>';
+
+    var latest = latestNonNull(values, metric);
+    document.getElementById("latest-" + metric).textContent = latest === null ? "記録なし" : "最新: " + latest + (unit||"");
+  }
+
+  function latestNonNull(values){
+    for(var i = values.length - 1; i >= 0; i--){
+      if(values[i] !== null && values[i] !== undefined && values[i] !== 0){
+        return values[i];
+      }
+    }
+    // fall back to last value even if 0
+    for(var j = values.length - 1; j >= 0; j--){
+      if(values[j] !== null && values[j] !== undefined) return values[j];
+    }
+    return null;
+  }
+
+  function renderAllCharts(){
+    renderBarChart("chart-carbs", "carbs", COLORS.carbs, "回");
+    renderBarChart("chart-alcohol", "alcohol", COLORS.alcohol, "回");
+    renderBarChart("chart-exercise", "exercise", COLORS.exercise, "回");
+    renderBarChart("chart-steps", "steps", COLORS.steps, "歩");
+    renderLineChart("chart-weight", "weight", COLORS.weight, "kg");
+  }
+
+  // ---- CSV export ----
+  document.getElementById("export-csv").addEventListener("click", function(){
+    var keys = Object.keys(data).sort();
+    var rows = ["日付,炭水化物(回),お酒(回),運動(回),歩数,体重(kg)"];
+    keys.forEach(function(k){
+      var r = data[k];
+      rows.push([
+        k,
+        r.carbs || 0,
+        r.alcohol || 0,
+        r.exercise || 0,
+        (r.steps === null || r.steps === undefined) ? "" : r.steps,
+        (r.weight === null || r.weight === undefined) ? "" : r.weight
+      ].join(","));
+    });
+    var csv = "\uFEFF" + rows.join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "health-tracker-backup_" + todayKey() + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---- init ----
+  refreshCounters();
+  renderAllCharts();
+
+  // ---- PWA service worker ----
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(err){
+        console.warn("Service worker registration failed", err);
+      });
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
