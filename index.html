@@ -593,34 +593,27 @@
     var stepX = W / ((values.length - 1) || 1);
     var yOf = function(v){ return padTop + (H - padTop - padBottom) * (1 - (v - min) / (max - min)); };
 
-    var segments = [];
-    var currentSeg = [];
+    var points = [];
     values.forEach(function(v, i){
-      if(v === null){
-        if(currentSeg.length){ segments.push(currentSeg); currentSeg = []; }
-        return;
-      }
-      currentSeg.push([i * stepX, yOf(v)]);
+      if(v === null) return; // no data that day - just skip it, don't break the line
+      points.push([i * stepX, yOf(v)]);
     });
-    if(currentSeg.length) segments.push(currentSeg);
 
     var showAllDots = values.length <= 60;
-    var pathHtml = segments.map(function(seg){
-      if(seg.length < 2) return ""; // a lone point has no line to draw; it still gets a dot below
-      var d = seg.map(function(p, i){ return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
-      return '<path d="' + d + '" fill="none" stroke="' + meta.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>';
-    }).join("");
+    var pathHtml = "";
+    if(points.length >= 2){
+      var d = points.map(function(p, i){ return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+      pathHtml = '<path d="' + d + '" fill="none" stroke="' + meta.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>';
+    }
 
     var dotsHtml = "";
-    segments.forEach(function(seg){
-      // isolated single-point segments always get a dot (otherwise they'd be invisible);
-      // for longer ranges we skip per-point dots on multi-point segments to avoid clutter.
-      if(seg.length === 1 || showAllDots){
-        seg.forEach(function(p){
-          dotsHtml += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.2" fill="' + meta.color + '"></circle>';
-        });
-      }
-    });
+    // a single isolated point (no line to draw) always gets a dot so it's still visible;
+    // otherwise dots are only shown on shorter ranges to avoid clutter.
+    if(points.length === 1 || showAllDots){
+      points.forEach(function(p){
+        dotsHtml += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.2" fill="' + meta.color + '"></circle>';
+      });
+    }
 
     var goalHtml = (typeof meta.goal === "number") ? goalLineSvg(yOf(meta.goal), meta) : "";
 
