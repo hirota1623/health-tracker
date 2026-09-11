@@ -67,6 +67,12 @@
     padding: 10px 2px 6px;
     display: flex; flex-direction: column; align-items: center; gap: 6px;
     min-height: 88px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .counter-item.achieved,
+  .numeric-card.achieved{
+    background: #FBEEF1;
+    border-color: #F3D2DB;
   }
   .counter-item .icon-wrap{ color: var(--ink); }
   .counter-item .icon-wrap svg.icon{ width: 18px; height: 18px; stroke-width: 1.7; }
@@ -242,7 +248,7 @@
       </div>
 
       <div class="counter-grid">
-        <div class="counter-item">
+        <div class="counter-item" id="edit-item-carbs">
           <span class="icon-wrap">
             <svg class="icon" viewBox="0 0 24 24"><path d="M4 11h16a8 6.2 0 0 1-16 0Z"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="8" y1="4" x2="8" y2="7"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="16" y1="4" x2="16" y2="7"/></svg>
           </span>
@@ -253,7 +259,7 @@
             <button class="step-btn plus" data-target="edit" data-key="carbs" data-dir="0.5">＋</button>
           </div>
         </div>
-        <div class="counter-item">
+        <div class="counter-item" id="edit-item-alcohol">
           <span class="icon-wrap">
             <svg class="icon" viewBox="0 0 24 24"><path d="M7 3h10l-2 8a3 3 0 0 1-6 0Z"/><line x1="12" y1="11" x2="12" y2="18"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
           </span>
@@ -264,7 +270,7 @@
             <button class="step-btn plus" data-target="edit" data-key="alcohol" data-dir="1">＋</button>
           </div>
         </div>
-        <div class="counter-item">
+        <div class="counter-item" id="edit-item-exercise">
           <span class="icon-wrap">
             <svg class="icon" viewBox="0 0 24 24"><rect x="1" y="8" width="3" height="8" rx="1"/><rect x="20" y="8" width="3" height="8" rx="1"/><line x1="4" y1="12" x2="20" y2="12"/><rect x="6.5" y="6" width="2" height="12" rx="1"/><rect x="15.5" y="6" width="2" height="12" rx="1"/></svg>
           </span>
@@ -277,7 +283,7 @@
         </div>
       </div>
 
-      <div class="card numeric-card">
+      <div class="card numeric-card" id="edit-item-steps">
         <span class="icon-wrap">
           <svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="4.6" ry="6.2"/><circle cx="8" cy="6" r="1.2"/><circle cx="12" cy="4.3" r="1.2"/><circle cx="16" cy="6" r="1.2"/></svg>
         </span>
@@ -288,7 +294,7 @@
         <button id="edit-save-steps">保存</button>
       </div>
 
-      <div class="card numeric-card">
+      <div class="card numeric-card" id="edit-item-weight">
         <span class="icon-wrap">
           <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><rect x="8" y="8.5" width="8" height="3" rx="1"/></svg>
         </span>
@@ -410,9 +416,12 @@
       document.getElementById("edit-count-" + key).textContent = r[key] || 0;
       var minusBtn = document.querySelector('.step-btn.minus[data-target="edit"][data-key="'+key+'"]');
       if(minusBtn){ minusBtn.disabled = (r[key] || 0) <= 0; }
+      document.getElementById("edit-item-" + key).classList.toggle("achieved", isGoalMet(key, r[key]));
     });
     document.getElementById("edit-input-steps").value = (r.steps === null || r.steps === undefined) ? "" : r.steps;
     document.getElementById("edit-input-weight").value = (r.weight === null || r.weight === undefined) ? "" : r.weight;
+    document.getElementById("edit-item-steps").classList.toggle("achieved", isGoalMet("steps", r.steps));
+    document.getElementById("edit-item-weight").classList.toggle("achieved", isGoalMet("weight", r.weight));
   }
 
   // ---- +/- handling (edit panel) ----
@@ -472,14 +481,25 @@
     calMonth = d.getMonth();
   }
 
+  var GOAL_CHECKS = {
+    carbs: function(v){ return v <= 1.5; },
+    alcohol: function(v){ return v === 0; },
+    exercise: function(v){ return v >= 1; },
+    steps: function(v){ return v >= 8000; },
+    weight: function(v){ return v < 71; }
+  };
+  function isGoalMet(key, value){
+    if(typeof value !== "number") return false;
+    var check = GOAL_CHECKS[key];
+    return check ? check(value) : false;
+  }
+
   function countGoalsMet(rec){
     if(!rec) return 0;
     var n = 0;
-    if(typeof rec.carbs === "number" && rec.carbs <= 1.5) n++;
-    if(typeof rec.alcohol === "number" && rec.alcohol === 0) n++;
-    if(typeof rec.exercise === "number" && rec.exercise >= 1) n++;
-    if(typeof rec.steps === "number" && rec.steps >= 8000) n++;
-    if(typeof rec.weight === "number" && rec.weight < 71) n++;
+    ["carbs","alcohol","exercise","steps","weight"].forEach(function(key){
+      if(isGoalMet(key, rec[key])) n++;
+    });
     return n;
   }
 
