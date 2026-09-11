@@ -821,9 +821,9 @@
 
   function pullAllFromSheet(){
     var url = getSheetsUrl();
-    if(!url) return;
+    if(!url) return Promise.resolve();
     setSyncStatus("同期中…");
-    fetch(url)
+    return fetch(url)
       .then(function(res){ return res.json(); })
       .then(function(remote){
         var pending = getPending();
@@ -868,14 +868,13 @@
       alert("URLの形式が正しくないようです。https:// から始まるURLを貼り付けてください。");
       return;
     }
-    var isFirstSetup = !getSheetsUrl();
     localStorage.setItem(SHEETS_URL_KEY, url);
-    if(isFirstSetup){
+    // 新しい端末(ローカルにデータが無い)でも、既存の端末(スプレッドシートより
+    // 新しいデータがある)でも同じ手順で正しく揃うように、
+    // 「まずスプレッドシートから取り込み」→「そのうえで手元のデータを送信」の順で行う
+    pullAllFromSheet().then(function(){
       bulkPushAllLocalData();
-    } else {
-      retryPendingSync();
-      pullAllFromSheet();
-    }
+    });
   });
 
   document.getElementById("sheets-resync-all").addEventListener("click", function(){
@@ -898,8 +897,7 @@
   var savedSheetsUrl = getSheetsUrl();
   if(savedSheetsUrl){
     document.getElementById("sheets-url-input").value = savedSheetsUrl;
-    retryPendingSync();
-    pullAllFromSheet();
+    pullAllFromSheet().then(function(){ retryPendingSync(); });
   }
 
   if("serviceWorker" in navigator){
