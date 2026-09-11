@@ -186,6 +186,23 @@
     padding: 11px; border-radius: var(--radius); cursor:pointer;
   }
   .export-btn:active{ background: var(--hover); }
+
+  .settings-row{ display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+  .settings-row label{ font-size:11.5px; color:var(--sub); font-weight:500; }
+  .settings-row input{
+    font-size: 13px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 10px; outline: none; font-family: inherit; width: 100%;
+  }
+  .settings-row input::placeholder{ color: var(--sub); }
+  .settings-save-btn{
+    appearance:none; width:100%; border:none; cursor:pointer;
+    background: var(--active-bg); color: var(--active-fg);
+    font-weight:600; font-size:12.5px; padding:10px; border-radius:8px;
+  }
+  .settings-save-btn:active{ opacity:.85; }
+  .sync-status{ font-size:11px; color:var(--sub); margin:10px 2px 0; }
+  .sync-status.ok{ color: #4C9F70; }
+  .sync-status.error{ color: #E0555C; }
 </style>
 </head>
 <body>
@@ -307,6 +324,18 @@
 
     <div class="export-row">
       <button class="export-btn" id="export-csv">CSVでバックアップを保存</button>
+    </div>
+  </section>
+
+  <section id="settings-section">
+    <h2>設定</h2>
+    <div class="card">
+      <div class="settings-row">
+        <label for="sheets-url-input">スプレッドシート連携用URL</label>
+        <input id="sheets-url-input" type="text" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+      </div>
+      <button class="settings-save-btn" id="sheets-url-save">保存して同期</button>
+      <p class="sync-status" id="sync-status">未設定(このスマホ内にのみ保存されています)</p>
     </div>
   </section>
 
@@ -682,13 +711,166 @@
     refreshEditCounters();
     renderCalendar();
     renderChart();
+    if(selectedDateKey){ syncOneRecord(selectedDateKey); }
   }
+
+  // ==========================================================
+  // ---- Google Sheets sync (optional; app still works fully
+  //      offline/local-only if no URL is configured) ----
+  // ==========================================================
+  var SHEETS_URL_KEY = "sheetsWebAppUrl";
+  var PENDING_KEY = "sheetsPendingSync";
+
+  function getSheetsUrl(){ return (localStorage.getItem(SHEETS_URL_KEY) || "").trim(); }
+
+  function getPending(){
+    try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); }
+    catch(e){ return []; }
+  }
+  function setPending(list){ localStorage.setItem(PENDING_KEY, JSON.stringify(list)); }
+  function addPending(key){
+    var list = getPending();
+    if(list.indexOf(key) === -1){ list.push(key); setPending(list); }
+  }
+  function removePending(key){
+    var list = getPending().filter(function(k){ return k !== key; });
+    setPending(list);
+  }
+
+  function setSyncStatus(text, cls){
+    var el = document.getElementById("sync-status");
+    if(!el) return;
+    el.textContent = text;
+    el.className = "sync-status" + (cls ? " " + cls : "");
+  }
+
+  function syncOneRecord(dateKey){
+    var url = getSheetsUrl();
+    if(!url){ return; }
+    var rec = data[dateKey];
+    if(!rec) return;
+    setSyncStatus("同期中…");
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        date: dateKey,
+        carbs: rec.carbs || 0,
+        alcohol: rec.alcohol || 0,
+        exercise: rec.exercise || 0,
+        steps: (rec.steps === null || rec.steps === undefined) ? "" : rec.steps,
+        weight: (rec.weight === null || rec.weight === undefined) ? "" : rec.weight
+      })
+    }).then(function(res){ return res.json(); })
+      .then(function(json){
+        if(json && json.ok){
+          removePending(dateKey);
+          setSyncStatus("同期しました", "ok");
+        } else {
+          addPending(dateKey);
+          setSyncStatus("同期エラー(このスマホには保存済みです)", "error");
+        }
+      })
+      .catch(function(){
+        addPending(dateKey);
+        setSyncStatus("オフラインのため未同期(このスマホには保存済みです)", "error");
+      });
+  }
+
+  function retryPendingSync(){
+    var url = getSheetsUrl();
+    if(!url) return;
+    var pending = getPending();
+    pending.forEach(function(key){ syncOneRecord(key); });
+  }
+
+  function pullAllFromSheet(){
+    var url = getSheetsUrl();
+    if(!url) return;
+    setSyncStatus("同期中…");
+    fetch(url)
+      .then(function(res){ return res.json(); })
+      .then(function(remote){
+        var pending = getPending();
+        Object.keys(remote).forEach(function(key){
+          if(pending.indexOf(key) !== -1) return; // don't clobber an unsynced local edit
+          data[key] = remote[key];
+        });
+        saveData(data);
+        renderCalendar();
+        renderChart();
+        refreshEditCounters();
+        setSyncStatus("同期しました", "ok");
+      })
+      .catch(function(){
+        setSyncStatus("オフラインのため未同期(このスマホ内のデータで表示中)", "error");
+      });
+  }
+
+  function bulkPushAllLocalData(){
+    var url = getSheetsUrl();
+    if(!url) return;
+    var keys = Object.keys(data);
+    if(keys.length === 0) return;
+    setSyncStatus("初回同期中… (0/" + keys.length + ")");
+    var done = 0;
+    keys.forEach(function(key){
+      var rec = data[key];
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          date: key,
+          carbs: rec.carbs || 0,
+          alcohol: rec.alcohol || 0,
+          exercise: rec.exercise || 0,
+          steps: (rec.steps === null || rec.steps === undefined) ? "" : rec.steps,
+          weight: (rec.weight === null || rec.weight === undefined) ? "" : rec.weight
+        })
+      }).then(function(){ return true; })
+        .catch(function(){ addPending(key); return false; })
+        .then(function(){
+          done++;
+          setSyncStatus("初回同期中… (" + done + "/" + keys.length + ")");
+          if(done === keys.length){ setSyncStatus("同期しました", "ok"); }
+        });
+    });
+  }
+
+  document.getElementById("sheets-url-save").addEventListener("click", function(){
+    var input = document.getElementById("sheets-url-input");
+    var url = input.value.trim();
+    if(!url){
+      localStorage.removeItem(SHEETS_URL_KEY);
+      setSyncStatus("未設定(このスマホ内にのみ保存されています)");
+      return;
+    }
+    if(url.indexOf("https://") !== 0){
+      alert("URLの形式が正しくないようです。https:// から始まるURLを貼り付けてください。");
+      return;
+    }
+    var isFirstSetup = !getSheetsUrl();
+    localStorage.setItem(SHEETS_URL_KEY, url);
+    if(isFirstSetup){
+      bulkPushAllLocalData();
+    } else {
+      retryPendingSync();
+      pullAllFromSheet();
+    }
+  });
 
   // ---- init ----
   initCalendarToCurrentMonth();
   renderCalendar();
   selectDate(todayKey(), { scroll: false }); // open today's entry by default
   renderChart();
+
+  var savedSheetsUrl = getSheetsUrl();
+  if(savedSheetsUrl){
+    document.getElementById("sheets-url-input").value = savedSheetsUrl;
+    retryPendingSync();
+    pullAllFromSheet();
+  }
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", function(){
