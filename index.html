@@ -79,6 +79,7 @@
   .counter-item .label{ font-size: 10.5px; color: var(--ink); font-weight: 500; white-space: nowrap; }
   .counter-item .count-row{ display: flex; align-items: center; gap: 4px; min-width: 0; }
   .counter-item .count{ font-size: 14.5px; font-weight: 600; color: var(--ink); min-width: 14px; text-align: center; }
+  .counter-item .count.is-empty{ color: var(--sub); font-weight: 500; }
   .step-btn{
     appearance: none; border: none; cursor: pointer;
     width: 24px; height: 24px; border-radius: 50%; flex: none;
@@ -397,7 +398,7 @@
   function getRecord(dateKey, createIfMissing){
     if(!data[dateKey]){
       if(!createIfMissing) return null;
-      data[dateKey] = { carbs:0, alcohol:0, exercise:0, steps:null, weight:null };
+      data[dateKey] = { carbs:null, alcohol:null, exercise:null, steps:null, weight:null };
     }
     return data[dateKey];
   }
@@ -411,12 +412,15 @@
   // ---- edit panel counters ----
   function refreshEditCounters(){
     if(!selectedDateKey) return;
-    var r = getRecord(selectedDateKey, false) || { carbs:0, alcohol:0, exercise:0, steps:null, weight:null };
+    var r = getRecord(selectedDateKey, false) || { carbs:null, alcohol:null, exercise:null, steps:null, weight:null };
     ["carbs","alcohol","exercise"].forEach(function(key){
-      document.getElementById("edit-count-" + key).textContent = r[key] || 0;
+      var v = r[key];
+      var isEmpty = (v === null || v === undefined);
+      document.getElementById("edit-count-" + key).textContent = isEmpty ? "－" : v;
+      document.getElementById("edit-count-" + key).classList.toggle("is-empty", isEmpty);
       var minusBtn = document.querySelector('.step-btn.minus[data-target="edit"][data-key="'+key+'"]');
-      if(minusBtn){ minusBtn.disabled = (r[key] || 0) <= 0; }
-      document.getElementById("edit-item-" + key).classList.toggle("achieved", isGoalMet(key, r[key]));
+      if(minusBtn){ minusBtn.disabled = (v === null || v === undefined); }
+      document.getElementById("edit-item-" + key).classList.toggle("achieved", isGoalMet(key, v));
     });
     document.getElementById("edit-input-steps").value = (r.steps === null || r.steps === undefined) ? "" : r.steps;
     document.getElementById("edit-input-weight").value = (r.weight === null || r.weight === undefined) ? "" : r.weight;
@@ -433,10 +437,20 @@
     var dateKey = selectedDateKey;
     if(!dateKey) return;
     var rec = getRecord(dateKey, true);
-    var next = (rec[key] || 0) + dir;
-    next = Math.round(next * 2) / 2;
-    if(next < 0) next = 0;
-    rec[key] = next;
+    var current = rec[key];
+
+    if(dir < 0 && (current === null || current === undefined)){
+      return; // already blank, nothing to subtract (button should be disabled anyway)
+    }
+    if(dir < 0 && current <= 0){
+      // already at 0: one more "－" clears it back to "未記入" rather than staying stuck at 0
+      rec[key] = null;
+    } else {
+      var next = (current || 0) + dir;
+      next = Math.round(next * 2) / 2;
+      if(next < 0) next = 0;
+      rec[key] = next;
+    }
     onDataChanged();
     if(navigator.vibrate){ navigator.vibrate(15); }
   });
@@ -714,9 +728,9 @@
       var r = data[k];
       rows.push([
         k,
-        r.carbs || 0,
-        r.alcohol || 0,
-        r.exercise || 0,
+        (r.carbs === null || r.carbs === undefined) ? "" : r.carbs,
+        (r.alcohol === null || r.alcohol === undefined) ? "" : r.alcohol,
+        (r.exercise === null || r.exercise === undefined) ? "" : r.exercise,
         (r.steps === null || r.steps === undefined) ? "" : r.steps,
         (r.weight === null || r.weight === undefined) ? "" : r.weight
       ].join(","));
@@ -773,16 +787,17 @@
   }
 
   function postRecordToSheet_(url, dateKey, rec){
+    var blankIfEmpty = function(v){ return (v === null || v === undefined) ? "" : v; };
     return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         date: dateKey,
-        carbs: rec.carbs || 0,
-        alcohol: rec.alcohol || 0,
-        exercise: rec.exercise || 0,
-        steps: (rec.steps === null || rec.steps === undefined) ? "" : rec.steps,
-        weight: (rec.weight === null || rec.weight === undefined) ? "" : rec.weight
+        carbs: blankIfEmpty(rec.carbs),
+        alcohol: blankIfEmpty(rec.alcohol),
+        exercise: blankIfEmpty(rec.exercise),
+        steps: blankIfEmpty(rec.steps),
+        weight: blankIfEmpty(rec.weight)
       })
     }).then(function(res){ return res.json(); });
   }
