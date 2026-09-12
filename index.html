@@ -352,19 +352,10 @@
   <section id="settings-section">
     <h2>設定</h2>
     <div class="card">
-      <div class="settings-row">
-        <label for="firebase-config-input">Firebase設定(firebaseConfigの中身をそのまま貼り付け)</label>
-        <textarea id="firebase-config-input" rows="6" placeholder='{
-  apiKey: "...",
-  authDomain: "...",
-  projectId: "...",
-  ...
-}'></textarea>
-      </div>
-      <button class="settings-save-btn" id="firebase-config-save">保存して同期</button>
+      <p class="cal-hint" style="margin:0 0 10px;">Firebaseに接続済みです。記録するたびに自動で同期されます。</p>
       <button class="settings-secondary-btn" id="firebase-resync-all">このスマホの全データを再送信</button>
       <button class="settings-secondary-btn" id="cleanup-data">このスマホ内の壊れたデータを掃除</button>
-      <p class="sync-status" id="sync-status">未設定(このスマホ内にのみ保存されています)</p>
+      <p class="sync-status" id="sync-status">未接続</p>
     </div>
   </section>
 
@@ -771,33 +762,25 @@
   }
 
   // ==========================================================
-  // ---- Firebase (Firestore) sync (optional; app still works
-  //      fully offline/local-only if not configured) ----
+  // ---- Firebase (Firestore) sync ----
   // ==========================================================
-  var FIREBASE_CONFIG_KEY = "firebaseConfigJson";
+  // このアプリ専用のFirebaseプロジェクトの接続情報。
+  // Firebaseの仕様上、この情報が公開されていても問題ありません
+  // (安全性は「ログインしていないと読み書きできない」という
+  // セキュリティルールの方で担保されています)。
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBeNK7JEJdyTsG7BIpMAqVBg9xisWiX9Iw",
+    authDomain: "health-tracker-cfe09.firebaseapp.com",
+    projectId: "health-tracker-cfe09",
+    storageBucket: "health-tracker-cfe09.firebasestorage.app",
+    messagingSenderId: "667021530790",
+    appId: "1:667021530790:web:b722e09a02d03482844667"
+  };
   var PENDING_KEY = "firebasePendingSync";
   var RECORDS_COLLECTION = "records";
 
   var firebaseApp = null;
   var db = null;
-
-  function getSavedFirebaseConfig(){
-    try{ return JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || "null"); }
-    catch(e){ return null; }
-  }
-
-  // Firebaseコンソールが表示するコードは正式なJSONではない
-  // (キーがクォートで囲まれていない等)ため、多少緩めに読み取る
-  function parseFirebaseConfigText_(text){
-    var cleaned = text.trim()
-      .replace(/^\s*(const|var|let)\s+firebaseConfig\s*=\s*/, "")
-      .replace(/;\s*$/, "");
-    var obj = new Function("return (" + cleaned + ");")();
-    if(!obj || !obj.apiKey || !obj.projectId){
-      throw new Error("apiKey / projectId が見つかりません");
-    }
-    return obj;
-  }
 
   function initFirebase_(config){
     if(!firebaseApp){
@@ -921,37 +904,9 @@
     );
   }
 
-  document.getElementById("firebase-config-save").addEventListener("click", function(){
-    var textarea = document.getElementById("firebase-config-input");
-    var raw = textarea.value.trim();
-    if(!raw){
-      localStorage.removeItem(FIREBASE_CONFIG_KEY);
-      setSyncStatus("未設定(このスマホ内にのみ保存されています)");
-      return;
-    }
-    var config;
-    try{
-      config = parseFirebaseConfigText_(raw);
-    }catch(err){
-      alert("Firebase設定の読み取りに失敗しました。Firebaseコンソールに表示された firebaseConfig をそのまま貼り付けてください。");
-      return;
-    }
-    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(config));
-    setSyncStatus("接続中…");
-    initFirebase_(config).then(function(){
-      // 新しい端末(ローカルにデータが無い)でも、既存の端末でも同じ手順で
-      // 正しく揃うように、「まず取り込み」→「そのうえで手元のデータを送信」の順で行う
-      pullAllFromFirestore().then(function(){
-        bulkPushAllLocalData();
-      });
-    }).catch(function(){
-      setSyncStatus("接続エラー(設定内容を確認してください)", "error");
-    });
-  });
-
   document.getElementById("firebase-resync-all").addEventListener("click", function(){
     if(!db){
-      alert("先にFirebase設定を保存してください。");
+      alert("Firebaseへの接続がまだ完了していません。少し待ってからもう一度お試しください。");
       return;
     }
     if(!confirm("このスマホに保存されている全期間のデータを、Firebaseへ再送信します。よろしいですか?")){
@@ -988,16 +943,12 @@
   selectDate(todayKey(), { scroll: false }); // open today's entry by default
   renderChart();
 
-  var savedFirebaseConfig = getSavedFirebaseConfig();
-  if(savedFirebaseConfig){
-    document.getElementById("firebase-config-input").value = JSON.stringify(savedFirebaseConfig, null, 2);
-    setSyncStatus("接続中…");
-    initFirebase_(savedFirebaseConfig).then(function(){
-      pullAllFromFirestore().then(function(){ retryPendingSync(); });
-    }).catch(function(){
-      setSyncStatus("接続エラー(設定内容を確認してください)", "error");
-    });
-  }
+  setSyncStatus("接続中…");
+  initFirebase_(FIREBASE_CONFIG).then(function(){
+    pullAllFromFirestore().then(function(){ retryPendingSync(); });
+  }).catch(function(){
+    setSyncStatus("接続エラー(ネットワークをご確認ください)", "error");
+  });
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", function(){
