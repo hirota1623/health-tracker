@@ -354,7 +354,6 @@
     <div class="card">
       <p class="cal-hint" style="margin:0 0 10px;">Firebaseに接続済みです。記録するたびに自動で同期されます。</p>
       <button class="settings-secondary-btn" id="firebase-resync-all">このスマホの全データを再送信</button>
-      <button class="settings-secondary-btn" id="cleanup-data">このスマホ内の壊れたデータを掃除</button>
       <p class="sync-status" id="sync-status">未接続</p>
     </div>
   </section>
@@ -915,27 +914,8 @@
     bulkPushAllLocalData();
   });
 
-  // "2026-09-07" のような正しい形式以外のキーで保存されてしまったデータを取り除く
+  // サーバー応答に紛れ込んだ、正しい日付形式以外のキーを無視するための保険
   var VALID_DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
-  document.getElementById("cleanup-data").addEventListener("click", function(){
-    var badKeys = Object.keys(data).filter(function(k){ return !VALID_DATE_KEY.test(k); });
-    if(badKeys.length === 0){
-      alert("壊れたデータは見つかりませんでした。");
-      return;
-    }
-    if(!confirm(badKeys.length + "件の、日付の形式がおかしいデータが見つかりました。削除してよろしいですか?(同じ日の正しいデータは残ります)")){
-      return;
-    }
-    badKeys.forEach(function(k){
-      delete data[k];
-      removePending(k);
-    });
-    saveData(data);
-    renderCalendar();
-    renderChart();
-    refreshEditCounters();
-    alert(badKeys.length + "件削除しました。");
-  });
 
   // ---- init ----
   initCalendarToCurrentMonth();
