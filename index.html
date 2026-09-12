@@ -201,6 +201,12 @@
     padding: 9px 10px; outline: none; font-family: inherit; width: 100%;
   }
   .settings-row input::placeholder{ color: var(--sub); }
+  .settings-row textarea{
+    font-size: 12px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 10px; outline: none; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    width: 100%; resize: vertical; line-height: 1.5;
+  }
+  .settings-row textarea::placeholder{ color: var(--sub); }
   .settings-save-btn{
     appearance:none; width:100%; border:none; cursor:pointer;
     background: var(--active-bg); color: var(--active-fg);
@@ -217,6 +223,9 @@
   .sync-status.ok{ color: #4C9F70; }
   .sync-status.error{ color: #E0555C; }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -344,11 +353,16 @@
     <h2>設定</h2>
     <div class="card">
       <div class="settings-row">
-        <label for="sheets-url-input">スプレッドシート連携用URL</label>
-        <input id="sheets-url-input" type="text" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+        <label for="firebase-config-input">Firebase設定(firebaseConfigの中身をそのまま貼り付け)</label>
+        <textarea id="firebase-config-input" rows="6" placeholder='{
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  ...
+}'></textarea>
       </div>
-      <button class="settings-save-btn" id="sheets-url-save">保存して同期</button>
-      <button class="settings-secondary-btn" id="sheets-resync-all">このスマホの全データを再送信</button>
+      <button class="settings-save-btn" id="firebase-config-save">保存して同期</button>
+      <button class="settings-secondary-btn" id="firebase-resync-all">このスマホの全データを再送信</button>
       <button class="settings-secondary-btn" id="cleanup-data">このスマホ内の壊れたデータを掃除</button>
       <p class="sync-status" id="sync-status">未設定(このスマホ内にのみ保存されています)</p>
     </div>
@@ -757,13 +771,41 @@
   }
 
   // ==========================================================
-  // ---- Google Sheets sync (optional; app still works fully
-  //      offline/local-only if no URL is configured) ----
+  // ---- Firebase (Firestore) sync (optional; app still works
+  //      fully offline/local-only if not configured) ----
   // ==========================================================
-  var SHEETS_URL_KEY = "sheetsWebAppUrl";
-  var PENDING_KEY = "sheetsPendingSync";
+  var FIREBASE_CONFIG_KEY = "firebaseConfigJson";
+  var PENDING_KEY = "firebasePendingSync";
+  var RECORDS_COLLECTION = "records";
 
-  function getSheetsUrl(){ return (localStorage.getItem(SHEETS_URL_KEY) || "").trim(); }
+  var firebaseApp = null;
+  var db = null;
+
+  function getSavedFirebaseConfig(){
+    try{ return JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || "null"); }
+    catch(e){ return null; }
+  }
+
+  // Firebaseコンソールが表示するコードは正式なJSONではない
+  // (キーがクォートで囲まれていない等)ため、多少緩めに読み取る
+  function parseFirebaseConfigText_(text){
+    var cleaned = text.trim()
+      .replace(/^\s*(const|var|let)\s+firebaseConfig\s*=\s*/, "")
+      .replace(/;\s*$/, "");
+    var obj = new Function("return (" + cleaned + ");")();
+    if(!obj || !obj.apiKey || !obj.projectId){
+      throw new Error("apiKey / projectId が見つかりません");
+    }
+    return obj;
+  }
+
+  function initFirebase_(config){
+    if(!firebaseApp){
+      firebaseApp = firebase.initializeApp(config);
+      db = firebase.firestore();
+    }
+    return firebase.auth().signInAnonymously();
+  }
 
   function getPending(){
     try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); }
@@ -786,37 +828,28 @@
     el.className = "sync-status" + (cls ? " " + cls : "");
   }
 
-  function postRecordToSheet_(url, dateKey, rec){
-    var blankIfEmpty = function(v){ return (v === null || v === undefined) ? "" : v; };
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        date: dateKey,
-        carbs: blankIfEmpty(rec.carbs),
-        alcohol: blankIfEmpty(rec.alcohol),
-        exercise: blankIfEmpty(rec.exercise),
-        steps: blankIfEmpty(rec.steps),
-        weight: blankIfEmpty(rec.weight)
-      })
-    }).then(function(res){ return res.json(); });
+  function blankToNull_(v){ return (v === "" || v === undefined) ? null : v; }
+
+  function postRecordToFirestore_(dateKey, rec){
+    if(!db) return Promise.reject(new Error("not configured"));
+    return db.collection(RECORDS_COLLECTION).doc(dateKey).set({
+      carbs: blankToNull_(rec.carbs),
+      alcohol: blankToNull_(rec.alcohol),
+      exercise: blankToNull_(rec.exercise),
+      steps: blankToNull_(rec.steps),
+      weight: blankToNull_(rec.weight)
+    });
   }
 
   function syncOneRecord(dateKey){
-    var url = getSheetsUrl();
-    if(!url){ return; }
+    if(!db) return;
     var rec = data[dateKey];
     if(!rec) return;
     setSyncStatus("同期中…");
-    postRecordToSheet_(url, dateKey, rec)
-      .then(function(json){
-        if(json && json.ok){
-          removePending(dateKey);
-          setSyncStatus("同期しました", "ok");
-        } else {
-          addPending(dateKey);
-          setSyncStatus("同期エラー(このスマホには保存済みです)", "error");
-        }
+    postRecordToFirestore_(dateKey, rec)
+      .then(function(){
+        removePending(dateKey);
+        setSyncStatus("同期しました", "ok");
       })
       .catch(function(){
         addPending(dateKey);
@@ -824,11 +857,10 @@
       });
   }
 
-  // 複数件を送るときは必ず1件ずつ順番に(同時に送ると、書き込み先の行が
-  // 競合してデータが失われることがあるため)
+  // 複数件を送るときは必ず1件ずつ順番に送る(挙動をシンプルかつ
+  // 予測しやすく保つため。Firestore自体は同時書き込みでも競合しない)
   function sequentialPush_(keys, onProgress, onDone){
-    var url = getSheetsUrl();
-    if(!url || keys.length === 0){ onDone(0); return; }
+    if(!db || keys.length === 0){ onDone(0); return; }
     var i = 0;
     var okCount = 0;
     function next(){
@@ -836,11 +868,8 @@
       var key = keys[i++];
       var rec = data[key];
       if(!rec){ next(); return; }
-      postRecordToSheet_(url, key, rec)
-        .then(function(json){
-          if(json && json.ok){ okCount++; removePending(key); }
-          else { addPending(key); }
-        })
+      postRecordToFirestore_(key, rec)
+        .then(function(){ okCount++; removePending(key); })
         .catch(function(){ addPending(key); })
         .then(function(){
           onProgress(i, keys.length);
@@ -855,18 +884,17 @@
     sequentialPush_(pending, function(){}, function(){});
   }
 
-  function pullAllFromSheet(){
-    var url = getSheetsUrl();
-    if(!url) return Promise.resolve();
+  function pullAllFromFirestore(){
+    if(!db) return Promise.resolve();
     setSyncStatus("同期中…");
-    return fetch(url)
-      .then(function(res){ return res.json(); })
-      .then(function(remote){
+    return db.collection(RECORDS_COLLECTION).get()
+      .then(function(snapshot){
         var pending = getPending();
-        Object.keys(remote).forEach(function(key){
-          if(!VALID_DATE_KEY.test(key)) return; // ignore malformed keys from a misbehaving server response
+        snapshot.forEach(function(doc){
+          var key = doc.id;
+          if(!VALID_DATE_KEY.test(key)) return;
           if(pending.indexOf(key) !== -1) return; // don't clobber an unsynced local edit
-          data[key] = remote[key];
+          data[key] = doc.data();
         });
         saveData(data);
         renderCalendar();
@@ -893,40 +921,46 @@
     );
   }
 
-  document.getElementById("sheets-url-save").addEventListener("click", function(){
-    var input = document.getElementById("sheets-url-input");
-    var url = input.value.trim();
-    if(!url){
-      localStorage.removeItem(SHEETS_URL_KEY);
+  document.getElementById("firebase-config-save").addEventListener("click", function(){
+    var textarea = document.getElementById("firebase-config-input");
+    var raw = textarea.value.trim();
+    if(!raw){
+      localStorage.removeItem(FIREBASE_CONFIG_KEY);
       setSyncStatus("未設定(このスマホ内にのみ保存されています)");
       return;
     }
-    if(url.indexOf("https://") !== 0){
-      alert("URLの形式が正しくないようです。https:// から始まるURLを貼り付けてください。");
+    var config;
+    try{
+      config = parseFirebaseConfigText_(raw);
+    }catch(err){
+      alert("Firebase設定の読み取りに失敗しました。Firebaseコンソールに表示された firebaseConfig をそのまま貼り付けてください。");
       return;
     }
-    localStorage.setItem(SHEETS_URL_KEY, url);
-    // 新しい端末(ローカルにデータが無い)でも、既存の端末(スプレッドシートより
-    // 新しいデータがある)でも同じ手順で正しく揃うように、
-    // 「まずスプレッドシートから取り込み」→「そのうえで手元のデータを送信」の順で行う
-    pullAllFromSheet().then(function(){
-      bulkPushAllLocalData();
+    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(config));
+    setSyncStatus("接続中…");
+    initFirebase_(config).then(function(){
+      // 新しい端末(ローカルにデータが無い)でも、既存の端末でも同じ手順で
+      // 正しく揃うように、「まず取り込み」→「そのうえで手元のデータを送信」の順で行う
+      pullAllFromFirestore().then(function(){
+        bulkPushAllLocalData();
+      });
+    }).catch(function(){
+      setSyncStatus("接続エラー(設定内容を確認してください)", "error");
     });
   });
 
-  document.getElementById("sheets-resync-all").addEventListener("click", function(){
-    if(!getSheetsUrl()){
-      alert("先にスプレッドシート連携用URLを保存してください。");
+  document.getElementById("firebase-resync-all").addEventListener("click", function(){
+    if(!db){
+      alert("先にFirebase設定を保存してください。");
       return;
     }
-    if(!confirm("このスマホに保存されている全期間のデータを、スプレッドシートへ再送信します。よろしいですか?")){
+    if(!confirm("このスマホに保存されている全期間のデータを、Firebaseへ再送信します。よろしいですか?")){
       return;
     }
     bulkPushAllLocalData();
   });
 
-  // "2026-09-07" のような正しい形式以外のキーで保存されてしまったデータ
-  // (スプレッドシート側の不具合が直る前に同期して紛れ込んでしまったもの等)を取り除く
+  // "2026-09-07" のような正しい形式以外のキーで保存されてしまったデータを取り除く
   var VALID_DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
   document.getElementById("cleanup-data").addEventListener("click", function(){
     var badKeys = Object.keys(data).filter(function(k){ return !VALID_DATE_KEY.test(k); });
@@ -954,10 +988,15 @@
   selectDate(todayKey(), { scroll: false }); // open today's entry by default
   renderChart();
 
-  var savedSheetsUrl = getSheetsUrl();
-  if(savedSheetsUrl){
-    document.getElementById("sheets-url-input").value = savedSheetsUrl;
-    pullAllFromSheet().then(function(){ retryPendingSync(); });
+  var savedFirebaseConfig = getSavedFirebaseConfig();
+  if(savedFirebaseConfig){
+    document.getElementById("firebase-config-input").value = JSON.stringify(savedFirebaseConfig, null, 2);
+    setSyncStatus("接続中…");
+    initFirebase_(savedFirebaseConfig).then(function(){
+      pullAllFromFirestore().then(function(){ retryPendingSync(); });
+    }).catch(function(){
+      setSyncStatus("接続エラー(設定内容を確認してください)", "error");
+    });
   }
 
   if("serviceWorker" in navigator){
