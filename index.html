@@ -282,6 +282,34 @@
     padding:9px 22px; border-radius:8px;
   }
 
+  .section-title-row{ display:flex; align-items:center; justify-content:space-between; }
+  .section-title-actions{ display:flex; align-items:center; gap:8px; }
+  .help-btn{
+    appearance:none; border:1px solid var(--line); background:var(--card); color:var(--sub);
+    width:20px; height:20px; border-radius:50%; font-size:11px; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .help-popup{ max-width:360px; align-items:stretch; text-align:left; max-height:80vh; }
+  .help-popup-head{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:14px; font-weight:700; color:var(--ink); margin-bottom:10px;
+  }
+  .help-close-btn{
+    appearance:none; border:1px solid var(--line); background:var(--card); color:var(--ink);
+    font-weight:500; font-size:11.5px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  }
+  .help-list{ overflow-y:auto; display:flex; flex-direction:column; gap:14px; padding-right:2px; }
+  .help-list-item{ display:flex; gap:12px; align-items:flex-start; }
+  .help-list-icon{
+    flex:none; width:34px; height:34px; border-radius:50%; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .help-list-icon svg{ width:18px; height:18px; stroke:var(--ink); stroke-width:1.7; fill:none; }
+  .help-list-text{ display:flex; flex-direction:column; gap:2px; }
+  .help-list-range{ font-size:10.5px; color:var(--sub); font-weight:600; }
+  .help-list-label{ font-size:12.5px; color:var(--ink); font-weight:700; }
+  .help-list-desc{ font-size:11.5px; color:var(--sub); line-height:1.5; margin:0; }
+
   .fasting-times-row{ display:flex; justify-content:space-around; margin-bottom:16px; }
   .fasting-time-col{ display:flex; flex-direction:column; align-items:center; gap:3px; }
   .fasting-time-label{ font-size:10.5px; color:var(--sub); font-weight:500; }
@@ -296,11 +324,11 @@
   .fasting-main-btn.stop{ background:#E0555C; }
 
   .water-fab{
-    position:absolute; top:14px; right:14px; width:36px; height:36px; border-radius:50%;
+    position:static; width:22px; height:22px; border-radius:50%;
     background: var(--active-bg); color:var(--active-fg); border:none; cursor:pointer;
-    display:flex; align-items:center; justify-content:center;
+    display:flex; align-items:center; justify-content:center; padding:0;
   }
-  .water-fab svg{ width:18px; height:18px; stroke:currentColor; stroke-width:1.8; fill:none; }
+  .water-fab svg{ width:12px; height:12px; stroke:currentColor; stroke-width:1.8; fill:none; }
 
   .water-overlay{
     position:fixed; inset:0; z-index:25; background:var(--bg);
@@ -485,11 +513,16 @@
 <div id="page-fasting" style="display:none">
 
   <section id="fasting-section">
-    <h2>断食トラッカー</h2>
-    <div class="card fasting-card" style="position:relative;">
-      <button class="water-fab" id="water-open" aria-label="水分補給">
-        <svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg>
-      </button>
+    <h2 class="section-title-row">
+      <span>断食トラッカー</span>
+      <span class="section-title-actions">
+        <button class="water-fab" id="water-open" aria-label="水分補給">
+          <svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg>
+        </button>
+        <button class="help-btn" id="fasting-help-open" aria-label="状態アイコンの説明">？</button>
+      </span>
+    </h2>
+    <div class="card fasting-card">
       <div class="fasting-mode-row" id="fasting-mode-row">
         <button data-mode="14:10">14:10</button>
         <button data-mode="16:8" class="active">16:8</button>
@@ -527,6 +560,16 @@
       <div class="status-popup-title" id="status-popup-title">-</div>
       <p class="status-popup-desc" id="status-popup-desc"></p>
       <button class="status-popup-close" id="status-popup-close">閉じる</button>
+    </div>
+  </div>
+
+  <div id="help-backdrop" class="status-popup-backdrop" style="display:none">
+    <div class="status-popup help-popup">
+      <div class="help-popup-head">
+        <span>状態アイコンの一覧</span>
+        <button class="help-close-btn" id="help-close">閉じる</button>
+      </div>
+      <div class="help-list" id="help-list"></div>
     </div>
   </div>
 
@@ -1279,6 +1322,32 @@
   });
   document.getElementById("fasting-ring").addEventListener("click", function(e){
     if(lastFastingPhase && e.target.closest(".status-badge")){ openStatusPopup(lastFastingPhase); }
+  });
+
+  // ---- help: full list of phase icons/statuses ----
+  function buildHelpList(){
+    var list = document.getElementById("help-list");
+    var prevMax = 0;
+    list.innerHTML = PHASES.map(function(phase){
+      var rangeLabel = (phase.max >= 9999)
+        ? (prevMax + "時間〜")
+        : (prevMax + "〜" + phase.max + "時間");
+      prevMax = phase.max;
+      return '<div class="help-list-item">' +
+        '<div class="help-list-icon"><svg viewBox="0 0 24 24">' + phase.icon + '</svg></div>' +
+        '<div class="help-list-text">' +
+          '<span class="help-list-range">' + rangeLabel + '</span>' +
+          '<span class="help-list-label">' + phase.label + '</span>' +
+          '<p class="help-list-desc">' + phase.desc + '</p>' +
+        '</div></div>';
+    }).join("");
+  }
+  function openHelpPopup(){ buildHelpList(); document.getElementById("help-backdrop").style.display = "flex"; }
+  function closeHelpPopup(){ document.getElementById("help-backdrop").style.display = "none"; }
+  document.getElementById("fasting-help-open").addEventListener("click", openHelpPopup);
+  document.getElementById("help-close").addEventListener("click", closeHelpPopup);
+  document.getElementById("help-backdrop").addEventListener("click", function(e){
+    if(e.target === this){ closeHelpPopup(); }
   });
 
   function updateFastingDisplay(){
