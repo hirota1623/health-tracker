@@ -650,6 +650,8 @@
 
   var INK = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
   var LINE_COLOR = getComputedStyle(document.documentElement).getPropertyValue('--line').trim();
+  var SUB_COLOR = getComputedStyle(document.documentElement).getPropertyValue('--sub').trim();
+  var BG_COLOR = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   var GOAL_COLOR = "#B9B9B6";
 
   var WATER_GOAL_KEY = "waterDailyGoalMl";
@@ -1289,7 +1291,9 @@
   }
   function formatClock(d){ return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + (isToday(d) ? "(今日)" : "(" + (d.getMonth() + 1) + "/" + d.getDate() + ")"); }
 
-  function renderFastingRing(progress, phase){
+  var FASTING_MILESTONES = [12, 14, 16, 18, 20];
+
+  function renderFastingRing(progress, phase, goalH){
     var svg = document.getElementById("fasting-ring");
     var cx = 110, cy = 110, r = 90, sw = 14;
     var circ = 2 * Math.PI * r;
@@ -1300,9 +1304,24 @@
       html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + INK + '" stroke-width="' + sw +
         '" stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) +
         '" transform="rotate(-90 ' + cx + ' ' + cy + ')"></circle>';
-      var angleRad = (-90 + progress * 360) * Math.PI / 180;
-      var bx = cx + r * Math.cos(angleRad);
-      var by = cy + r * Math.sin(angleRad);
+    }
+    if(typeof goalH === "number" && goalH > 0){
+      FASTING_MILESTONES.forEach(function(h){
+        if(h >= goalH) return; // the goal itself is already the ring's own endpoint
+        var frac = h / goalH;
+        var angleRad = (-90 + frac * 360) * Math.PI / 180;
+        var mx = cx + r * Math.cos(angleRad);
+        var my = cy + r * Math.sin(angleRad);
+        var lx = cx + (r + 17) * Math.cos(angleRad);
+        var ly = cy + (r + 17) * Math.sin(angleRad);
+        html += '<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="3.2" fill="' + BG_COLOR + '" stroke="' + INK + '" stroke-width="1.4"></circle>' +
+          '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" font-size="9" font-weight="600" text-anchor="middle" dominant-baseline="middle" fill="' + SUB_COLOR + '">' + h + '</text>';
+      });
+    }
+    if(phase){
+      var badgeAngleRad = (-90 + progress * 360) * Math.PI / 180;
+      var bx = cx + r * Math.cos(badgeAngleRad);
+      var by = cy + r * Math.sin(badgeAngleRad);
       html += '<g class="status-badge" transform="translate(' + bx.toFixed(1) + ',' + by.toFixed(1) + ')">' +
         '<circle r="16" class="badge-bg"></circle>' +
         '<g transform="translate(-9,-9) scale(0.75)">' + phase.icon + '</g></g>';
@@ -1372,7 +1391,7 @@
       startLabel.textContent = "-";
       goalEndLabel.textContent = "-";
       lastFastingPhase = null;
-      renderFastingRing(0, null);
+      renderFastingRing(0, null, getFastingGoalHours());
       return;
     }
 
@@ -1400,7 +1419,7 @@
 
     var phase = getPhase(elapsedH);
     lastFastingPhase = phase;
-    renderFastingRing(elapsedH / goalH, phase);
+    renderFastingRing(elapsedH / goalH, phase, goalH);
   }
 
   document.querySelectorAll("#fasting-mode-row button").forEach(function(btn){
