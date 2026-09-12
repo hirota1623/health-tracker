@@ -659,6 +659,7 @@
   }
   var FASTING_MODE_KEY = "fastingSelectedMode";
   var FASTING_GOAL_HOURS = { "14:10":14, "16:8":16, "18:6":18, "20:4":20 };
+  var FASTING_CLEAR_HOURS = 12; // これを超えたら、選んだモードに関係なく「クリア」として記録する
   function getFastingMode(){ return localStorage.getItem(FASTING_MODE_KEY) || "16:8"; }
   function getFastingGoalHours(){ return FASTING_GOAL_HOURS[getFastingMode()] || 16; }
 
@@ -668,7 +669,7 @@
     exercise: { label: "運動",     unit: "回", zeroFill: true,  color: "#3B6FE0", goal: 1    },
     steps:    { label: "歩数",     unit: "歩", zeroFill: false, color: "#8B5CF6", goal: 8000 },
     weight:   { label: "体重",     unit: "kg", zeroFill: false, color: "#E0555C", goal: 71, baseline: 60 },
-    fastingHours: { label: "断食時間", unit: "時間", zeroFill: false, color: "#3B6FE0", get goal(){ return getFastingGoalHours(); } },
+    fastingHours: { label: "断食時間", unit: "時間", zeroFill: false, color: "#3B6FE0", goal: FASTING_CLEAR_HOURS },
     water:        { label: "水分補給", unit: "ml",   zeroFill: false, color: "#4FB3E8", get goal(){ return getWaterGoal(); } }
   };
 
@@ -1424,14 +1425,13 @@
       setFastingState({ active: true, startTime: new Date().toISOString(), mode: getFastingMode() });
     } else {
       var elapsedH = (Date.now() - new Date(state.startTime).getTime()) / 3600000;
-      var goalH = FASTING_GOAL_HOURS[state.mode] || 16;
-      if(elapsedH >= goalH){
+      if(elapsedH >= FASTING_CLEAR_HOURS){
         var rec = getRecord(todayKey(), true);
         rec.fastingHours = Math.round(elapsedH * 10) / 10;
         onDataChanged();
         alert("お疲れ様でした！" + rec.fastingHours + "時間の断食を記録しました。");
       } else {
-        alert("目標の" + goalH + "時間には届きませんでした(" + elapsedH.toFixed(1) + "時間)。今回は記録されません。");
+        alert("クリア基準の" + FASTING_CLEAR_HOURS + "時間には届きませんでした(" + elapsedH.toFixed(1) + "時間)。今回は記録されません。");
       }
       setFastingState({ active: false });
     }
