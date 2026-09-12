@@ -1474,7 +1474,7 @@
 
   function renderCupGrid(){
     var grid = document.getElementById("cup-grid");
-    var presets = [50, 100, 200, 300, 500];
+    var presets = [150, 350, 500, 650];
     var current = getCupSize();
     grid.innerHTML = presets.map(function(v){
       return '<button data-ml="' + v + '" class="' + (v === current ? "selected" : "") + '">' + v + ' ml</button>';
