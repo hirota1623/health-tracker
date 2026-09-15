@@ -185,6 +185,7 @@
   .chart-card .chart-title{ font-size: 13px; font-weight: 600; }
   .chart-card .chart-latest{ font-size: 11.5px; color: var(--sub); }
   .chart-card svg.chart-svg{ display:block; width: 100%; height: 160px; }
+  #chart-main-fasting rect.deletable-bar{ touch-action: none; -webkit-user-select: none; user-select: none; }
 
   .export-row{ margin-top: 4px; }
   .export-btn{
@@ -619,6 +620,7 @@
         <span class="chart-latest" id="chart-latest-fasting">-</span>
       </div>
       <svg class="chart-svg" id="chart-main-fasting" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
+      <p class="cal-hint" style="margin:8px 2px 0;">棒を長押しすると、その日の記録を削除できます。</p>
     </div>
     <div class="export-row">
       <button class="export-btn" id="export-csv-fasting">CSVでバックアップを保存</button>
@@ -873,7 +875,7 @@
 
   // ---- metric / range tabs ----
   var reportHealth = { metric: "carbs", range: 14, metricTabsId: "metric-tabs", rangeTabsId: "range-tabs", svgId: "chart-main", titleId: "chart-title", latestId: "chart-latest" };
-  var reportFasting = { metric: "fastingHours", range: 14, metricTabsId: "metric-tabs-fasting", rangeTabsId: "range-tabs-fasting", svgId: "chart-main-fasting", titleId: "chart-title-fasting", latestId: "chart-latest-fasting" };
+  var reportFasting = { metric: "fastingHours", range: 14, metricTabsId: "metric-tabs-fasting", rangeTabsId: "range-tabs-fasting", svgId: "chart-main-fasting", titleId: "chart-title-fasting", latestId: "chart-latest-fasting", deletable: true };
 
   function wireReportTabs(ctx){
     document.getElementById(ctx.metricTabsId).addEventListener("click", function(e){
@@ -938,7 +940,7 @@
     if(useLine){
       renderLineChart(svg, values, meta, present);
     }else{
-      renderBarChart(svg, values, meta, present);
+      renderBarChart(svg, values, meta, present, dates, ctx);
     }
 
     var latest = null;
@@ -998,7 +1000,7 @@
       '<line x1="0" y1="' + (H - padBottom) + '" x2="' + W + '" y2="' + (H - padBottom) + '" stroke="' + LINE_COLOR + '" stroke-width="1"></line>';
   }
 
-  function renderBarChart(svg, values, meta, present){
+  function renderBarChart(svg, values, meta, present, dates, ctx){
     var floor = (typeof meta.baseline === "number") ? meta.baseline : 0;
     var min = Math.min(floor, Math.min.apply(null, present));
     var max = Math.max.apply(null, present.concat([typeof meta.goal === "number" ? meta.goal : 0, floor + 1]));
@@ -1010,6 +1012,7 @@
     var slot = W / values.length;
     var barW = Math.max(slot - barGap, 0.6);
     var yOf = function(v){ return padTop + innerH * (1 - (v - min) / (max - min)); };
+    var deletable = !!(ctx && ctx.deletable);
 
     var barsHtml = "";
     values.forEach(function(v, i){
@@ -1017,7 +1020,8 @@
       var x = i * slot + (slot - barW) / 2;
       var y = yOf(v);
       var h = Math.max((H - padBottom) - y, 0.6);
-      barsHtml += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1" fill="' + meta.color + '"></rect>';
+      var dateAttr = (deletable && dates && dates[i]) ? (' data-date="' + dates[i] + '" class="deletable-bar"') : "";
+      barsHtml += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1" fill="' + meta.color + '"' + dateAttr + '></rect>';
     });
 
     var goalHtml = (typeof meta.goal === "number") ? goalLineSvg(yOf(meta.goal), meta) : "";
@@ -1474,7 +1478,7 @@
 
   function renderCupGrid(){
     var grid = document.getElementById("cup-grid");
-    var presets = [150, 350, 500, 650];
+    var presets = [50, 100, 200, 300, 500];
     var current = getCupSize();
     grid.innerHTML = presets.map(function(v){
       return '<button data-ml="' + v + '" class="' + (v === current ? "selected" : "") + '">' + v + ' ml</button>';
@@ -1530,6 +1534,56 @@
     var picker = document.getElementById("water-cup-picker");
     picker.style.display = (picker.style.display === "none") ? "block" : "none";
   });
+
+  // ---- long-press a bar in the fasting report to delete that day's record ----
+  (function setupBarLongPress(){
+    var svg = document.getElementById("chart-main-fasting");
+    var LONG_PRESS_MS = 600;
+    var MOVE_CANCEL_PX = 10;
+    var timer = null;
+    var startX = 0, startY = 0, targetBar = null;
+
+    function clearTimer(){
+      if(timer){ clearTimeout(timer); timer = null; }
+      targetBar = null;
+    }
+
+    svg.addEventListener("pointerdown", function(e){
+      var bar = e.target.closest(".deletable-bar");
+      if(!bar) return;
+      targetBar = bar;
+      startX = e.clientX;
+      startY = e.clientY;
+      timer = setTimeout(function(){
+        var dateKey = targetBar.getAttribute("data-date");
+        timer = null;
+        targetBar = null;
+        if(navigator.vibrate){ navigator.vibrate(30); }
+        var metricLabel = METRIC_META[reportFasting.metric].label;
+        if(confirm(dateKey + " の「" + metricLabel + "」の記録を削除しますか?")){
+          var rec = getRecord(dateKey, false);
+          if(rec){
+            rec[reportFasting.metric] = null;
+            saveData(data);
+            renderChartFor(reportFasting);
+            syncOneRecord(dateKey);
+          }
+        }
+      }, LONG_PRESS_MS);
+    });
+    svg.addEventListener("pointermove", function(e){
+      if(!timer) return;
+      if(Math.abs(e.clientX - startX) > MOVE_CANCEL_PX || Math.abs(e.clientY - startY) > MOVE_CANCEL_PX){
+        clearTimer();
+      }
+    });
+    svg.addEventListener("pointerup", clearTimer);
+    svg.addEventListener("pointercancel", clearTimer);
+    svg.addEventListener("pointerleave", clearTimer);
+    // a long press that ends in a confirm() dialog also fires a native "click" right after;
+    // suppress it so it doesn't register as a stray tap on whatever is underneath.
+    svg.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  })();
 
   // ---- init ----
   initCalendarToCurrentMonth();
